@@ -12,5 +12,9 @@
 *.swo
 *~
 
+# CI/CD
+artifacts/
+.runner/
+
 # OS
 .DS_Store
