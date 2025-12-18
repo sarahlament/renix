@@ -1,0 +1,16 @@
+# Rust
+/target
+
+# Nix
+/result
+/result-*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
