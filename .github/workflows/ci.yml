@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check flake
+        run: nix flake check
+
+  build:
+    strategy:
+      matrix:
+        system:
+          - x86_64-linux
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build package
+        run: nix build .#packages.${{ matrix.system }}.renix
+
+  test:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run tests
+        run: nix develop --command cargo test
+
+      - name: Check formatting
+        run: nix develop --command cargo fmt --check
+
+      - name: Run clippy
+        run: nix develop --command cargo clippy -- -D warnings
