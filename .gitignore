@@ -12,6 +12,10 @@
 *.swo
 *~
 
+# CI/CD
+artifacts/
+.runner/
+
 # OS
 .DS_Store
 CLAUDE.md

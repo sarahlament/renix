@@ -1,0 +1,39 @@
+name: Cleanup
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual triggers
+
+jobs:
+  cleanup-artifacts:
+    runs-on: self-hosted
+    steps:
+      - name: Clean up Nix store
+        run: |
+          nix-collect-garbage --delete-older-than 7d
+
+      - name: Clean up old build artifacts
+        run: |
+          # Remove artifacts older than 7 days
+          find ~/actions-runner/_work/renix/renix/artifacts -type f -mtime +7 -delete 2>/dev/null || true
+          find ~/actions-runner/_work/renix/renix/result* -type l -mtime +7 -delete 2>/dev/null || true
+
+      - name: Clean up cargo target directory
+        run: |
+          cd ~/actions-runner/_work/renix/renix
+          if [ -d "target" ]; then
+            cargo clean
+          fi
+
+  cleanup-old-runs:
+    runs-on: self-hosted
+    permissions:
+      actions: write
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 30
+          keep_minimum_runs: 10
