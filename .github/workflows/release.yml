@@ -29,10 +29,10 @@ jobs:
           ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
         run: |
           # Login to attic
-          attic login athena https://attic.lament.gay $ATTIC_TOKEN
+          nix run nixpkgs#attic-client -- login athena https://attic.lament.gay $ATTIC_TOKEN
 
           # Push the package to the cache
-          attic push athena result
+          nix run nixpkgs#attic-client -- push athena result
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
