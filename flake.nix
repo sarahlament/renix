@@ -24,12 +24,28 @@
 
           buildInputs = [];
           nativeBuildInputs = [];
+
+          meta = {
+            description = "NixOS Rebuild Manager TUI";
+            license = pkgs.lib.licenses.mit;
+            maintainers = [
+              {
+                name = "Sarah Lament";
+                email = "sarah@lament.gay";
+                github = "sarahlament";
+                githubId = 4612427;
+              }
+            ];
+            mainProgram = "renix";
+          };
         };
       in {
         packages = {
           default = renix;
           renix = renix;
         };
+
+        formatter = pkgs.alejandra;
 
         devShells.default = craneLib.devShell {
           packages = with pkgs; [
@@ -38,5 +54,26 @@
           ];
         };
       }
-    );
+    )
+    // {
+      nixosModules = {
+        default = self.nixosModules.renix;
+        renix = {
+          config,
+          lib,
+          pkgs,
+          ...
+        }: {
+          options.programs.renix.enable = lib.mkEnableOption "renix, a NixOS host manager TUI";
+          config = lib.mkIf config.programs.renix.enable {
+            environment.systemPackages = [self.packages.${pkgs.system}.renix];
+          };
+        };
+      };
+
+      overlays.renix = self.overlays.default;
+      overlays.default = final: prev: {
+        renix = self.packages.${final.system}.renix;
+      };
+    };
 }

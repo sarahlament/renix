@@ -75,28 +75,36 @@ impl<'de> Deserialize<'de> for Connection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostConfig {
     pub connection: Connection,
+    #[serde(default)]
+    pub extra_args: Vec<String>,
 }
 
 impl HostConfig {
     pub fn new(connection: Connection) -> Self {
-        Self { connection }
+        Self {
+            connection,
+            extra_args: Vec::new(),
+        }
     }
 
     pub fn unconfigured() -> Self {
         Self {
             connection: Connection::Unconfigured,
+            extra_args: Vec::new(),
         }
     }
 
     pub fn local() -> Self {
         Self {
             connection: Connection::Local,
+            extra_args: Vec::new(),
         }
     }
 
     pub fn remote(addr: impl Into<String>) -> Self {
         Self {
             connection: Connection::Remote(addr.into()),
+            extra_args: Vec::new(),
         }
     }
 }

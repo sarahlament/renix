@@ -14,9 +14,6 @@ pub struct Config {
     pub flake_path: Option<String>,
 
     #[serde(default)]
-    pub extra_args: Vec<String>,
-
-    #[serde(default)]
     pub hosts: HashMap<String, HostConfig>,
 }
 
@@ -107,7 +104,6 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             flake_path: None,
-            extra_args: vec![],
             hosts: HashMap::new(),
         }
     }

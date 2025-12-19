@@ -1,7 +1,7 @@
 use color_eyre::{eyre::Context, Result};
+use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use std::io::Write;
 use std::process::Command;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as TokioCommand;
 use tokio::sync::mpsc;
 
 use crate::app::RebuildOperation;
@@ -13,6 +13,13 @@ pub struct RebuildCommand {
     pub config_name: String,
     pub connection: Connection,
     pub extra_args: Vec<String>,
+    pub pty_cols: u16,
+    pub pty_rows: u16,
+}
+
+pub struct RebuildChannels {
+    pub output_rx: mpsc::Receiver<Vec<u8>>,
+    pub input_tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl RebuildCommand {
@@ -22,6 +29,8 @@ impl RebuildCommand {
         config_name: String,
         connection: Connection,
         extra_args: Vec<String>,
+        pty_cols: u16,
+        pty_rows: u16,
     ) -> Self {
         Self {
             operation,
@@ -29,31 +38,31 @@ impl RebuildCommand {
             config_name,
             connection,
             extra_args,
+            pty_cols,
+            pty_rows,
         }
     }
 
-    /// Build the nixos-rebuild command
-    fn build_command(&self) -> Command {
-        let mut cmd = Command::new("nixos-rebuild");
-
-        // Add operation
-        cmd.arg(self.operation.as_str());
+    /// Build the command arguments for nixos-rebuild
+    fn build_args(&self) -> Vec<String> {
+        let mut args = vec![self.operation.as_str().to_string()];
 
         // Add flake reference if available
         if let Some(ref flake_path) = self.flake_path {
-            cmd.arg("--flake");
-            cmd.arg(format!("{}#{}", flake_path, self.config_name));
+            args.push("--flake".to_string());
+            args.push(format!("{}#{}", flake_path, self.config_name));
         }
 
-        // Add remote target if not local
+        // Add remote target if not local, and use appropriate sudo flag
         match &self.connection {
             Connection::Remote(addr) => {
-                cmd.arg("--target-host");
-                cmd.arg(addr);
-                cmd.arg("--use-remote-sudo");
+                args.push("--target-host".to_string());
+                args.push(addr.clone());
+                args.push("--use-remote-sudo".to_string());
             }
             Connection::Local => {
-                // Local rebuild, no extra args needed
+                // Local rebuild with regular sudo
+                args.push("--sudo".to_string());
             }
             Connection::Unconfigured => {
                 // This shouldn't happen - unconfigured hosts shouldn't be rebuildable
@@ -61,7 +70,16 @@ impl RebuildCommand {
         }
 
         // Add extra args
-        for arg in &self.extra_args {
+        args.extend(self.extra_args.clone());
+
+        args
+    }
+
+    /// Build the nixos-rebuild command (for blocking execution)
+    fn build_command(&self) -> Command {
+        let mut cmd = Command::new("nixos-rebuild");
+
+        for arg in self.build_args() {
             cmd.arg(arg);
         }
 
@@ -90,112 +108,138 @@ impl RebuildCommand {
         Ok(combined)
     }
 
-    /// Build a tokio command for async execution
-    fn build_tokio_command(&self) -> TokioCommand {
-        let mut cmd = TokioCommand::new("nixos-rebuild");
+    /// Execute the rebuild command asynchronously with PTY support for interactive prompts
+    /// Returns channels for both output (receiving) and input (sending)
+    pub async fn execute_streaming(self) -> Result<RebuildChannels> {
+        let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>(100);
+        let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(100);
 
-        // Add operation
-        cmd.arg(self.operation.as_str());
+        tokio::task::spawn_blocking(move || {
+            let pty_system = NativePtySystem::default();
 
-        // Add flake reference if available
-        if let Some(ref flake_path) = self.flake_path {
-            cmd.arg("--flake");
-            cmd.arg(format!("{}#{}", flake_path, self.config_name));
-        }
-
-        // Add remote target if not local
-        match &self.connection {
-            Connection::Remote(addr) => {
-                cmd.arg("--target-host");
-                cmd.arg(addr);
-                cmd.arg("--use-remote-sudo");
-            }
-            Connection::Local => {
-                // Local rebuild, no extra args needed
-            }
-            Connection::Unconfigured => {
-                // This shouldn't happen
-            }
-        }
-
-        // Add extra args
-        for arg in &self.extra_args {
-            cmd.arg(arg);
-        }
-
-        // Capture stdout and stderr
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        cmd
-    }
-
-    /// Execute the rebuild command asynchronously, streaming output to a channel
-    /// Returns a channel receiver that will receive output lines
-    pub async fn execute_streaming(self) -> Result<mpsc::Receiver<String>> {
-        let (tx, rx) = mpsc::channel(100);
-
-        tokio::spawn(async move {
-            let mut cmd = self.build_tokio_command();
-
-            let mut child = match cmd.spawn() {
-                Ok(child) => child,
+            // Create a PTY with the requested size
+            let pty_pair = match pty_system.openpty(PtySize {
+                rows: self.pty_rows,
+                cols: self.pty_cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            }) {
+                Ok(pair) => pair,
                 Err(e) => {
-                    let _ = tx
-                        .send(format!("Failed to spawn nixos-rebuild: {}", e))
-                        .await;
+                    let msg = format!("Failed to create PTY: {}\n", e);
+                    let _ = output_tx.blocking_send(msg.into_bytes());
                     return;
                 }
             };
 
-            let stdout = child.stdout.take().expect("Failed to capture stdout");
-            let stderr = child.stderr.take().expect("Failed to capture stderr");
+            // Set PTY to raw mode to disable line buffering
+            #[cfg(unix)]
+            {
+                use std::os::unix::io::BorrowedFd;
+                use nix::sys::termios::{self, LocalFlags};
 
-            let stdout_reader = BufReader::new(stdout);
-            let stderr_reader = BufReader::new(stderr);
-
-            let tx_stdout = tx.clone();
-            let tx_stderr = tx.clone();
-
-            // Spawn tasks to read stdout and stderr concurrently
-            let stdout_task = tokio::spawn(async move {
-                let mut lines = stdout_reader.lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    if tx_stdout.send(line).await.is_err() {
-                        break;
+                if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
+                    // SAFETY: We know the fd is valid as we just created the PTY
+                    let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+                    if let Ok(mut termios) = termios::tcgetattr(fd) {
+                        termios.local_flags.remove(LocalFlags::ICANON);
+                        termios.local_flags.remove(LocalFlags::ECHO);
+                        termios.local_flags.remove(LocalFlags::ISIG);
+                        let _ = termios::tcsetattr(fd, termios::SetArg::TCSANOW, &termios);
                     }
-                }
-            });
-
-            let stderr_task = tokio::spawn(async move {
-                let mut lines = stderr_reader.lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    if tx_stderr.send(format!("stderr: {}", line)).await.is_err() {
-                        break;
-                    }
-                }
-            });
-
-            // Wait for both readers to finish
-            let _ = tokio::join!(stdout_task, stderr_task);
-
-            // Wait for the process to finish
-            match child.wait().await {
-                Ok(status) => {
-                    if status.success() {
-                        let _ = tx.send("Build completed successfully!".to_string()).await;
-                    } else {
-                        let _ = tx
-                            .send(format!("Build failed with exit code: {:?}", status.code()))
-                            .await;
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(format!("Failed to wait for process: {}", e)).await;
                 }
             }
+
+            // Build the command
+            let args = self.build_args();
+            let mut cmd = CommandBuilder::new("nixos-rebuild");
+            for arg in args {
+                cmd.arg(arg);
+            }
+
+            // Set TERM environment variable so programs know they're in a terminal
+            cmd.env(
+                "TERM",
+                std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
+            );
+
+            // Spawn the command in the PTY
+            let mut child = match pty_pair.slave.spawn_command(cmd) {
+                Ok(child) => child,
+                Err(e) => {
+                    let msg = format!("Failed to spawn nixos-rebuild: {}\n", e);
+                    let _ = output_tx.blocking_send(msg.into_bytes());
+                    return;
+                }
+            };
+
+            // Drop the slave end - only keep the master
+            drop(pty_pair.slave);
+
+            // Get the master reader and writer
+            let mut reader = pty_pair.master.try_clone_reader().unwrap();
+            let mut writer = pty_pair.master.take_writer().unwrap();
+
+            // Spawn a thread to read from PTY and send to output channel
+            let output_tx_clone = output_tx.clone();
+            let reader_handle = std::thread::spawn(move || {
+                use std::io::Read;
+                let mut buffer = [0u8; 8192];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if output_tx_clone.blocking_send(buffer[..n].to_vec()).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+
+            // Handle input from the input channel and write to PTY
+            let writer_handle = std::thread::spawn(move || {
+                while let Some(data) = input_rx.blocking_recv() {
+                    if writer.write_all(&data).is_err() {
+                        break;
+                    }
+                    if writer.flush().is_err() {
+                        break;
+                    }
+                }
+            });
+
+            // Wait for the child process to complete
+            let exit_status = match child.wait() {
+                Ok(status) => status,
+                Err(e) => {
+                    let msg = format!("\n✗ Process error: {}\n", e);
+                    let _ = output_tx.blocking_send(msg.into_bytes());
+                    return;
+                }
+            };
+
+            // Send completion message
+            if exit_status.success() {
+                let _ = output_tx
+                    .blocking_send(b"\n\xE2\x9C\x93 Build completed successfully!\n".to_vec());
+            } else {
+                let msg = format!(
+                    "\n✗ Build failed with exit code: {:?}\n",
+                    exit_status.exit_code()
+                );
+                let _ = output_tx.blocking_send(msg.into_bytes());
+            }
+
+            // Wait for threads to finish
+            let _ = reader_handle.join();
+            drop(writer_handle); // Input thread will exit when channel closes
         });
 
-        Ok(rx)
+        Ok(RebuildChannels {
+            output_rx,
+            input_tx,
+        })
     }
 }

@@ -35,10 +35,19 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| "(no host selected)".to_string())
     };
 
-    let extra_args = if app.config.extra_args.is_empty() {
-        "(none)".to_string()
+    let extra_args = if app.edit_mode == EditMode::ExtraArgs {
+        format!("{}_", app.edit_buffer)
     } else {
-        app.config.extra_args.join(" ")
+        app.get_selected_host()
+            .and_then(|(name, _)| app.config.hosts.get(&name))
+            .map(|h| {
+                if h.extra_args.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    h.extra_args.join(" ")
+                }
+            })
+            .unwrap_or_else(|| "(none)".to_string())
     };
 
     let flake_style = if app.edit_mode == EditMode::FlakePath {
@@ -57,41 +66,51 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::Green)
     };
 
+    let args_style = if app.edit_mode == EditMode::ExtraArgs {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Cyan)
+    };
+
     let mut text = vec![
         Line::from(vec![
-            Span::raw("Flake: "),
+            Span::raw("flake: "),
             Span::styled(flake_path, flake_style),
             Span::raw(" "),
-            Span::styled("[f]", Style::default().fg(Color::DarkGray)),
+            Span::styled("[f]", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
-            Span::raw("Selected: "),
+            Span::raw("selected: "),
             Span::styled(selected_host, host_style),
             Span::raw(" "),
-            Span::styled("[c]", Style::default().fg(Color::DarkGray)),
+            Span::styled("[c]", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
-            Span::raw("Extra args: "),
-            Span::styled(extra_args, Style::default().fg(Color::Cyan)),
+            Span::raw("extra args: "),
+            Span::styled(extra_args, args_style),
+            Span::raw(" "),
+            Span::styled("[a]", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
     ];
 
     if app.is_editing() {
         text.push(Line::from(Span::styled(
-            "[Enter] save | [Esc] cancel",
+            "[enter] save | [esc] cancel",
             Style::default().fg(Color::Yellow),
         )));
     } else {
         text.push(Line::from(Span::styled(
-            "[Tab] switch panels | [f] edit flake | [c] edit connection",
-            Style::default().fg(Color::DarkGray),
+            "[tab] switch | [f] flake | [c] connection | [a] args",
+            Style::default().fg(Color::Gray),
         )));
     }
 
     let paragraph = Paragraph::new(text).block(
         Block::default()
-            .title(" Settings ")
+            .title(" settings ")
             .borders(Borders::ALL)
             .border_style(border_style),
     );
