@@ -139,12 +139,19 @@ fn render_output_area(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(block, area);
 
     // Get inner area (inside borders)
-    let inner_area = area.inner(ratatui::layout::Margin { horizontal: 1, vertical: 1 });
+    let inner_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
 
     // Trim trailing empty lines to avoid showing blank space at bottom
     while let Some(last_line) = lines.last() {
-        if last_line.spans.is_empty() ||
-           last_line.spans.iter().all(|span| span.content.trim().is_empty()) {
+        if last_line.spans.is_empty()
+            || last_line
+                .spans
+                .iter()
+                .all(|span| span.content.trim().is_empty())
+        {
             lines.pop();
         } else {
             break;

@@ -135,8 +135,8 @@ impl RebuildCommand {
             // Set PTY to raw mode to disable line buffering
             #[cfg(unix)]
             {
-                use std::os::unix::io::BorrowedFd;
                 use nix::sys::termios::{self, LocalFlags};
+                use std::os::unix::io::BorrowedFd;
 
                 if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
                     // SAFETY: We know the fd is valid as we just created the PTY
