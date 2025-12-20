@@ -8,8 +8,7 @@ use std::path::PathBuf;
 
 pub use hosts::{Connection, HostConfig};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub flake_path: Option<String>,
@@ -100,4 +99,3 @@ impl Config {
         Ok(())
     }
 }
-

@@ -382,8 +382,8 @@ impl App {
     pub fn commit_edit(&mut self) -> Result<()> {
         match self.edit_mode {
             EditMode::FlakePath => {
-                let flake_changed = self.config.flake_path.as_deref()
-                    != Some(self.edit_buffer.as_str());
+                let flake_changed =
+                    self.config.flake_path.as_deref() != Some(self.edit_buffer.as_str());
 
                 if self.edit_buffer.is_empty() {
                     self.config.flake_path = None;

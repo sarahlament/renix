@@ -5,6 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
+    pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
   };
 
   outputs = {
@@ -12,12 +13,24 @@
     nixpkgs,
     crane,
     flake-utils,
+    pre-commit-hooks,
     ...
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
         craneLib = crane.mkLib pkgs;
+
+        pre-commit-check = pre-commit-hooks.lib.${system}.run {
+          src = ./.;
+          hooks = {
+            rustfmt.enable = true;
+            clippy = {
+              enable = true;
+              packageOverrides.clippy = pkgs.clippy;
+            };
+          };
+        };
 
         renix = craneLib.buildPackage {
           src = craneLib.cleanCargoSource ./.;
@@ -52,6 +65,10 @@
             rust-analyzer
             cargo-watch
           ];
+
+          shellHook = ''
+            ${pre-commit-check.shellHook}
+          '';
         };
       }
     )
