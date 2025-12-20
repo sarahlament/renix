@@ -17,10 +17,6 @@ impl Connection {
         !matches!(self, Connection::Unconfigured)
     }
 
-    pub fn is_local(&self) -> bool {
-        matches!(self, Connection::Local)
-    }
-
     pub fn display(&self) -> String {
         match self {
             Connection::Local => "localhost".to_string(),
@@ -56,7 +52,7 @@ impl<'de> Deserialize<'de> for Connection {
         #[serde(untagged)]
         enum ConnectionHelper {
             String(String),
-            Array(Vec<()>),
+            Array(()),
         }
 
         match ConnectionHelper::deserialize(deserializer)? {
@@ -80,13 +76,6 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    pub fn new(connection: Connection) -> Self {
-        Self {
-            connection,
-            extra_args: Vec::new(),
-        }
-    }
-
     pub fn unconfigured() -> Self {
         Self {
             connection: Connection::Unconfigured,
@@ -97,13 +86,6 @@ impl HostConfig {
     pub fn local() -> Self {
         Self {
             connection: Connection::Local,
-            extra_args: Vec::new(),
-        }
-    }
-
-    pub fn remote(addr: impl Into<String>) -> Self {
-        Self {
-            connection: Connection::Remote(addr.into()),
             extra_args: Vec::new(),
         }
     }

@@ -21,8 +21,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         app.config
             .flake_path
-            .as_ref()
-            .map(|s| s.as_str())
+            .as_deref()
             .unwrap_or("(not set)")
             .to_string()
     };

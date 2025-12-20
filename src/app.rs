@@ -127,11 +127,6 @@ impl App {
         }
     }
 
-    /// Reset scroll to bottom (auto-scroll)
-    pub fn reset_scroll(&mut self) {
-        self.output_scroll = 0;
-    }
-
     /// Get list of hosts as (name, connection) tuples, sorted by name
     pub fn get_hosts(&self) -> Vec<(String, Connection)> {
         let mut hosts: Vec<_> = self
@@ -227,7 +222,7 @@ impl App {
             if self.is_building {
                 self.cancel_build();
             }
-            return true;
+            true
         } else {
             // First press - warn user
             self.quit_warned = true;
@@ -235,7 +230,7 @@ impl App {
                 let msg = "\n⚠ Build in progress! Press 'q' again to cancel and quit, or Esc to cancel build.\n";
                 self.terminal.feed_bytes(msg.as_bytes());
             }
-            return false;
+            false
         }
     }
 
@@ -387,7 +382,7 @@ impl App {
     pub fn commit_edit(&mut self) -> Result<()> {
         match self.edit_mode {
             EditMode::FlakePath => {
-                let flake_changed = self.config.flake_path.as_ref().map(|s| s.as_str())
+                let flake_changed = self.config.flake_path.as_deref()
                     != Some(self.edit_buffer.as_str());
 
                 if self.edit_buffer.is_empty() {

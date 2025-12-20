@@ -80,8 +80,8 @@ fn render_host_list(frame: &mut Frame, app: &App, area: Rect, focused: bool) {
 
 fn render_output_area(frame: &mut Frame, app: &App, area: Rect) {
     // Resize terminal to match output area (minus borders)
-    let term_width = area.width.saturating_sub(2) as usize;
-    let term_height = area.height.saturating_sub(2) as usize;
+    let _term_width = area.width.saturating_sub(2) as usize;
+    let _term_height = area.height.saturating_sub(2) as usize;
 
     // Convert terminal cells to ratatui Lines
     let scrollback = app.terminal.get_scrollback();
@@ -186,7 +186,7 @@ fn render_output_area(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(output, inner_area);
 }
 
-fn cells_to_line(cells: &[crate::terminal::Cell]) -> Line {
+fn cells_to_line(cells: &[crate::terminal::Cell]) -> Line<'_> {
     let mut spans = Vec::new();
     let mut current_text = String::new();
     let mut current_style = Style::default();

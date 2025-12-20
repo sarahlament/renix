@@ -1,7 +1,6 @@
-use color_eyre::{eyre::Context, Result};
+use color_eyre::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::Write;
-use std::process::Command;
 use tokio::sync::mpsc;
 
 use crate::app::RebuildOperation;
@@ -73,39 +72,6 @@ impl RebuildCommand {
         args.extend(self.extra_args.clone());
 
         args
-    }
-
-    /// Build the nixos-rebuild command (for blocking execution)
-    fn build_command(&self) -> Command {
-        let mut cmd = Command::new("nixos-rebuild");
-
-        for arg in self.build_args() {
-            cmd.arg(arg);
-        }
-
-        cmd
-    }
-
-    /// Execute the rebuild command synchronously (blocking)
-    pub fn execute_blocking(&self) -> Result<String> {
-        let mut cmd = self.build_command();
-
-        let output = cmd.output().wrap_err("Failed to execute nixos-rebuild")?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        let combined = format!("{}\n{}", stdout, stderr);
-
-        if !output.status.success() {
-            return Err(color_eyre::eyre::eyre!(
-                "nixos-rebuild failed with exit code {:?}\n{}",
-                output.status.code(),
-                combined
-            ));
-        }
-
-        Ok(combined)
     }
 
     /// Execute the rebuild command asynchronously with PTY support for interactive prompts

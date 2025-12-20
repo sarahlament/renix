@@ -9,6 +9,7 @@ use std::path::PathBuf;
 pub use hosts::{Connection, HostConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     #[serde(default)]
     pub flake_path: Option<String>,
@@ -100,11 +101,3 @@ impl Config {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            flake_path: None,
-            hosts: HashMap::new(),
-        }
-    }
-}
