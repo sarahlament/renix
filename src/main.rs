@@ -8,7 +8,7 @@ use app::App;
 use color_eyre::Result;
 use config::Config;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -71,7 +71,11 @@ async fn main() -> Result<()> {
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        event::DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     // Handle any errors that occurred during run
@@ -135,116 +139,131 @@ async fn run_app<B: ratatui::backend::Backend>(
 
         // Handle events with timeout
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                // Handle edit mode input
-                if app.is_editing() {
-                    match key.code {
-                        KeyCode::Enter => {
-                            app.commit_edit()?;
-                        }
-                        KeyCode::Esc => {
-                            app.cancel_edit();
-                        }
-                        KeyCode::Char(c) => {
-                            app.edit_insert_char(c);
-                        }
-                        KeyCode::Backspace => {
-                            app.edit_backspace();
-                        }
-                        _ => {}
-                    }
-                } else if app.input_mode {
-                    // Input mode - send keystrokes to PTY
-                    match key.code {
-                        KeyCode::Esc => {
-                            app.input_mode = false;
-                        }
-                        KeyCode::Char(c) => {
-                            app.send_input(vec![c as u8]);
-                        }
-                        KeyCode::Enter => {
-                            app.send_input(vec![b'\n']);
-                        }
-                        KeyCode::Backspace => {
-                            app.send_input(vec![0x7F]); // DEL character
-                        }
-                        _ => {}
-                    }
-                } else {
-                    // Normal mode input
-                    match key.code {
-                        KeyCode::Char('q') => {
-                            if app.attempt_quit() {
-                                return Ok(());
-                            }
-                        }
-                        KeyCode::Esc => {
-                            app.cancel_build();
-                        }
-                        KeyCode::Tab => {
-                            app.toggle_panel();
-                        }
-                        KeyCode::Char('f') => {
-                            app.start_edit_flake_path();
-                        }
-                        KeyCode::Char('c') => {
-                            app.start_edit_host_connection();
-                        }
-                        KeyCode::Char('a') => {
-                            app.start_edit_extra_args();
-                        }
-                        KeyCode::Char('u') => {
-                            app.toggle_upgrade();
-                        }
-                        KeyCode::Char('i') => {
-                            app.toggle_input_mode();
-                        }
-                        KeyCode::Up => {
-                            app.select_prev_host();
-                        }
-                        KeyCode::Down => {
-                            app.select_next_host();
-                        }
-                        KeyCode::Char('k') => {
+            match event::read()? {
+                Event::Mouse(mouse) => {
+                    // Handle mouse scroll events
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
                             app.scroll_output_up();
                         }
-                        KeyCode::Char('j') => {
+                        MouseEventKind::ScrollDown => {
                             app.scroll_output_down();
-                        }
-                        KeyCode::PageUp => {
-                            // Page up - scroll by 10 lines
-                            for _ in 0..10 {
-                                app.scroll_output_up();
-                            }
-                        }
-                        KeyCode::PageDown => {
-                            // Page down - scroll by 10 lines
-                            for _ in 0..10 {
-                                app.scroll_output_down();
-                            }
-                        }
-                        KeyCode::Home => {
-                            // Jump to top of output
-                            let total_lines = app.terminal.get_scrollback().len()
-                                + app.terminal.get_screen().len();
-                            app.output_scroll = total_lines.saturating_sub(1);
-                        }
-                        KeyCode::End => {
-                            // Jump to bottom of output
-                            app.output_scroll = 0;
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            app.prev_operation();
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            app.next_operation();
-                        }
-                        KeyCode::Enter => {
-                            app.start_rebuild_async().await?;
                         }
                         _ => {}
                     }
                 }
+                Event::Key(key) => {
+                    // Handle edit mode input
+                    if app.is_editing() {
+                        match key.code {
+                            KeyCode::Enter => {
+                                app.commit_edit()?;
+                            }
+                            KeyCode::Esc => {
+                                app.cancel_edit();
+                            }
+                            KeyCode::Char(c) => {
+                                app.edit_insert_char(c);
+                            }
+                            KeyCode::Backspace => {
+                                app.edit_backspace();
+                            }
+                            _ => {}
+                        }
+                    } else if app.input_mode {
+                        // Input mode - send keystrokes to PTY
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.input_mode = false;
+                            }
+                            KeyCode::Char(c) => {
+                                app.send_input(vec![c as u8]);
+                            }
+                            KeyCode::Enter => {
+                                app.send_input(vec![b'\n']);
+                            }
+                            KeyCode::Backspace => {
+                                app.send_input(vec![0x7F]); // DEL character
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        // Normal mode input
+                        match key.code {
+                            KeyCode::Char('q') => {
+                                if app.attempt_quit() {
+                                    return Ok(());
+                                }
+                            }
+                            KeyCode::Esc => {
+                                app.cancel_build();
+                            }
+                            KeyCode::Tab => {
+                                app.toggle_panel();
+                            }
+                            KeyCode::Char('f') => {
+                                app.start_edit_flake_path();
+                            }
+                            KeyCode::Char('c') => {
+                                app.start_edit_host_connection();
+                            }
+                            KeyCode::Char('a') => {
+                                app.start_edit_extra_args();
+                            }
+                            KeyCode::Char('u') => {
+                                app.toggle_upgrade();
+                            }
+                            KeyCode::Char('i') => {
+                                app.toggle_input_mode();
+                            }
+                            KeyCode::Up => {
+                                app.select_prev_host();
+                            }
+                            KeyCode::Down => {
+                                app.select_next_host();
+                            }
+                            KeyCode::Char('k') => {
+                                app.scroll_output_up();
+                            }
+                            KeyCode::Char('j') => {
+                                app.scroll_output_down();
+                            }
+                            KeyCode::PageUp => {
+                                // Page up - scroll by 10 lines
+                                for _ in 0..10 {
+                                    app.scroll_output_up();
+                                }
+                            }
+                            KeyCode::PageDown => {
+                                // Page down - scroll by 10 lines
+                                for _ in 0..10 {
+                                    app.scroll_output_down();
+                                }
+                            }
+                            KeyCode::Home => {
+                                // Jump to top of output
+                                let total_lines = app.terminal.get_scrollback().len()
+                                    + app.terminal.get_screen().len();
+                                app.output_scroll = total_lines.saturating_sub(1);
+                            }
+                            KeyCode::End => {
+                                // Jump to bottom of output
+                                app.output_scroll = 0;
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                app.prev_operation();
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                app.next_operation();
+                            }
+                            KeyCode::Enter => {
+                                app.start_rebuild_async().await?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
