@@ -1,6 +1,6 @@
 [package]
 name = "renix"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Sarah <sarah@lament.gay>"]
 description = "NixOS Rebuild Manager TUI"
