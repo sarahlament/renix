@@ -6,6 +6,7 @@
     crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
+    pre-commit-hooks.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = {
@@ -32,8 +33,14 @@
           };
         };
 
+        # Build only the cargo dependencies for caching
+        cargoArtifacts = craneLib.buildDepsOnly {
+          src = craneLib.cleanCargoSource ./.;
+        };
+
         renix = craneLib.buildPackage {
           src = craneLib.cleanCargoSource ./.;
+          inherit cargoArtifacts;
 
           buildInputs = [];
           nativeBuildInputs = [];
@@ -56,6 +63,7 @@
         packages = {
           default = renix;
           renix = renix;
+          renix-deps = cargoArtifacts;
         };
 
         formatter = pkgs.alejandra;
@@ -84,6 +92,11 @@
           options.programs.renix.enable = lib.mkEnableOption "renix, a NixOS host manager TUI";
           config = lib.mkIf config.programs.renix.enable {
             environment.systemPackages = [self.packages.${pkgs.system}.renix];
+
+            #nix.settings = {
+              #substituters = ["https://attic.lament.gay/athena"];
+              #trusted-public-keys = ["athena:iBycXk8bKCemxVvAjbfxzDFh/kDBNmn/iExsjWb2jH8="];
+            #};
           };
         };
       };

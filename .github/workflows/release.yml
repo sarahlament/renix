@@ -20,6 +20,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Build dependencies
+        run: |
+          nix build .#packages.x86_64-linux.renix-deps -o result-deps
+
       - name: Build package
         run: |
           nix build .#packages.x86_64-linux.renix
@@ -36,7 +40,10 @@ jobs:
           # Login to attic
           nix run nixpkgs#attic-client -- login athena https://attic.lament.gay $ATTIC_TOKEN
 
-          # Push the package to the cache
+          # Push cargo dependencies to cache
+          nix run nixpkgs#attic-client -- push athena result-deps
+
+          # Push the final package to cache
           nix run nixpkgs#attic-client -- push athena result
 
       - name: Create GitHub Release
